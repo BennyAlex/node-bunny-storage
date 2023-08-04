@@ -5,6 +5,10 @@ import path from 'path';
 import pLimit from 'p-limit';
 import {createLogger, format, transports} from 'winston';
 
+const logFormat = format.printf(({ level, message, label, timestamp }) => {
+  return `${format.colorize().colorize(level, '[' + level + ']')} ${format.colorize().colorize('debug', timestamp)}: ${message}`;
+});
+
 class BunnyCDNStorage {
   /**
    * @param {string} accessKey Your storage zone API access key. This is also your ftp password shown in the bunny dashboard.
@@ -22,19 +26,21 @@ class BunnyCDNStorage {
     this.logger = createLogger({
       level: logLevel,
       format: format.combine(
-        format.timestamp({
+        /*format.timestamp({
           format: 'YYYY-MM-DD HH:mm:ss'
-        }),
-        format.errors({stack: true}),
+        }),*/
+        format.timestamp(),
+        logFormat,
+       /* format.errors({stack: true}),
         format.splat(),
-        format.json()
+        format.json()*/
       ),
       transports: [
         new transports.Console({
-          format: format.combine(
+         /* format: format.combine(
             format.colorize(),
             format.simple()
-          ),
+          ),*/
           silent: logLevel === 'silent'
         })
       ]
@@ -77,8 +83,13 @@ class BunnyCDNStorage {
    * @private
    */
   _getFullStorageUrl(directory, fileName) {
-    const filePath = this._getFilePath(directory, fileName);
-    return `${this.baseURL}${this.storageZoneName}/` + filePath;
+    try {
+      const filePath = this._getFilePath(directory, fileName);
+      return `${this.baseURL}${this.storageZoneName}/` + filePath;
+    } catch (error) {
+      this.logger.error(`Failed to generate full storage URL for ${directory} and ${fileName}: ${error}`);
+      throw error;
+    }
   }
   
   /**
@@ -88,9 +99,14 @@ class BunnyCDNStorage {
    * @private
    */
   _getRemotePathFromFileWithoutStorageZone(file) {
-    const remotePath = file.Path;
-    if (remotePath.startsWith('/' + this.storageZoneName + '/')) return remotePath.slice(this.storageZoneName.length + 2);
-    return remotePath;
+    try {
+      const remotePath = file.Path;
+      if (remotePath.startsWith('/' + this.storageZoneName + '/')) return remotePath.slice(this.storageZoneName.length + 2);
+      return remotePath;
+    } catch (error) {
+      this.logger.error(`Failed to get remote path from file ${file}: ${error}`);
+      throw error;
+    }
   }
   
   
@@ -100,12 +116,11 @@ class BunnyCDNStorage {
    * @param {boolean} [recursive=false] Should the list go through each subdirectory recursively.
    */
   async listFiles(remoteDirectory = '/', recursive = false) {
-    const url = this._getFullStorageUrl(remoteDirectory);
-    
-    this.logger.info(`Listing files in ${url}`);
-    
-    // console.log(`Listing files in ${url}`);
     try {
+      const url = this._getFullStorageUrl(remoteDirectory);
+      
+      this.logger.info(`Listing files in ${url}`);
+      
       const response = await axios.get(url, {
         headers: {
           'AccessKey': this.accessKey,
@@ -127,14 +142,19 @@ class BunnyCDNStorage {
         const results = await Promise.all(tasks);
         
         for (const subFiles of results) {
-          allFiles = [...allFiles, ...subFiles];
+          try {
+            allFiles = [...allFiles, ...subFiles];
+          } catch (error) {
+            this.logger.error(`Error while merging subfiles: ${error}, subfiles: ${subFiles}`);
+            throw error;
+          }
         }
       }
       
       this.logger.info(`Found ${allFiles.length} files in ${url}`);
       return allFiles;
     } catch (error) {
-      this.logger.error(`Failed to list files in ${url}`);
+      this.logger.error(`Failed to list files in ${remoteDirectory}: ${error}`);
       throw error;
     }
   }
@@ -145,41 +165,32 @@ class BunnyCDNStorage {
    * @param {string} [remoteDirectory='/']  - The remote directory path. Leave blank or use '/' to upload to the root directory.
    */
   async uploadFile(localFilePath = '.', remoteDirectory = '/') {
-    const fileExists = await fse.pathExists(localFilePath);
-    if (!fileExists) {
-      this.logger.error(`Upload failed: File does not exist: ${localFilePath}`);
-      throw new Error(`Upload failed: File does not exist: ${localFilePath}`);
-    }
-    
-    this.logger.info(`Uploading ${localFilePath} to ${remoteDirectory}`);
-    
-    const fileData = fse.createReadStream(localFilePath);
-    const fileName = path.basename(localFilePath); // Extract the file name from the local file path
-    
-    const url = this._getFullStorageUrl(remoteDirectory, fileName);
-    
-    // console.log(`Uploading ${localFilePath} to ${url}`);
-    
-    const config = {
-      headers: {
-        'AccessKey': this.accessKey,
-        'Content-Type': 'application/octet-stream'
-      }
-    };
-    
     try {
+      const fileExists = await fse.pathExists(localFilePath);
+      if (!fileExists) {
+        this.logger.error(`Upload failed: File does not exist: ${localFilePath}`);
+        throw new Error(`Upload failed: File does not exist: ${localFilePath}`);
+      }
+      
+      this.logger.info(`Uploading ${localFilePath} to ${remoteDirectory}`);
+      
+      const fileData = fse.createReadStream(localFilePath);
+      const fileName = path.basename(localFilePath); // Extract the file name from the local file path
+      
+      const url = this._getFullStorageUrl(remoteDirectory, fileName);
+      
+      const config = {
+        headers: {
+          'AccessKey': this.accessKey,
+          'Content-Type': 'application/octet-stream'
+        }
+      };
+      
       return await axios.put(url, fileData, config);
     } catch (error) {
-      if (error.response) {
-        this.logger.error(`Error: ${error.response.status}`);
-        throw new Error(`Error: ${error.response.status}`);
-      } else if (error.request) {
-        this.logger.error(`Error: No response was received`);
-        throw new Error('No response was received');
-      } else {
-        this.logger.error(`Error: ${error}`);
-        throw error;
-      }
+      this.logger.error(`uploadFile Error: ${error}`);
+      throw error;
+      
     }
   }
   
@@ -191,41 +202,46 @@ class BunnyCDNStorage {
    * @returns {Promise<string>} - Returns a promise that resolves with the local file path of the downloaded file.
    */
   async downloadFile(remoteDirectory = '/', fileName, localDirectory = '.') {
-    if (!fileName) {
-      this.logger.error('downloadFile: No file name provided');
-      throw new Error('downloadFile: No file name provided');
-    }
-    
-    this.logger.info(`Downloading ${fileName} from ${remoteDirectory}`);
-    
-    const url = this._getFullStorageUrl(remoteDirectory, fileName);
-    
-    const response = await axios.get(url, {
-      responseType: 'stream',
-      headers: {
-        'AccessKey': this.accessKey
+    try {
+      if (!fileName) {
+        this.logger.error('downloadFile: No file name provided');
+        throw new Error('downloadFile: No file name provided');
       }
-    });
-    
-    const localPath = path.join(localDirectory, fileName);
-    
-    await fse.ensureDir(localDirectory);
-    
-    // Create a writable stream and pipe the response data to it
-    const fileStream = fse.createWriteStream(localPath);
-    response.data.pipe(fileStream);
-    
-    // Return a promise that resolves when the file has finished downloading
-    return new Promise((resolve, reject) => {
-      fileStream.on('finish', () => {
-        this.logger.info(`Downloaded ${fileName} to ${localPath}`);
-        resolve(localPath);
+      
+      this.logger.info(`Downloading ${fileName} from ${remoteDirectory}`);
+      
+      const url = this._getFullStorageUrl(remoteDirectory, fileName);
+      
+      const response = await axios.get(url, {
+        responseType: 'stream',
+        headers: {
+          'AccessKey': this.accessKey
+        }
       });
-      fileStream.on('error', () => {
-        this.logger.error(`Error downloading ${fileName} to ${localPath}`);
-        reject(localPath);
+      
+      const localPath = path.join(localDirectory, fileName);
+      
+      await fse.ensureDir(localDirectory);
+      
+      // Create a writable stream and pipe the response data to it
+      const fileStream = fse.createWriteStream(localPath);
+      response.data.pipe(fileStream);
+      
+      // Return a promise that resolves when the file has finished downloading
+      return new Promise((resolve, reject) => {
+        fileStream.on('finish', () => {
+          this.logger.info(`Downloaded ${fileName} to ${localPath}`);
+          resolve(localPath);
+        });
+        fileStream.on('error', () => {
+          this.logger.error(`Error downloading ${fileName} to ${localPath}`);
+          reject(localPath);
+        });
       });
-    });
+    } catch (error) {
+      this.logger.error(`downloadFile Error:: ${error}`);
+      throw error;
+    }
   }
   
   
@@ -235,12 +251,12 @@ class BunnyCDNStorage {
    * @param {string} fileName - The name of the file to delete. If it is a directory, the directory and all files in the directory will be deleted. If remoteDirectory and fileName are blank, all files in the storage zone will be deleted.
    */
   async delete(remoteDirectory = '/', fileName) {
-    if (!fileName) {
-      this.logger.error('delete: No file name provided');
-      throw new Error('delete: No file name provided');
-    }
-    this.logger.info(`Deleting ${fileName} from ${remoteDirectory}`);
     try {
+      if (!fileName) {
+        this.logger.error('delete: No file name provided');
+        throw new Error('delete: No file name provided');
+      }
+      this.logger.info(`Deleting ${fileName} from ${remoteDirectory}`);
       const url = this._getFullStorageUrl(remoteDirectory, fileName);
       await axios.delete(url, {
         headers: {
@@ -252,7 +268,7 @@ class BunnyCDNStorage {
       this.logger.info(`Deleted ${fileName} from ${remoteDirectory}, it's url was ${url}`);
       return url;
     } catch (error) {
-      this.logger.error(`Error deleting file: ${error}`);
+      this.logger.error(`delete Error: ${error}`);
       throw error;
     }
   }
@@ -294,12 +310,13 @@ class BunnyCDNStorage {
    * @param {string[]} [excludedFileTypes=[]] - File types to exclude from the upload.
    */
   async uploadFolder(localDirectory = './', remoteDirectory = '/', recursive = false, excludedFileTypes = []) {
-    const dirExists = await fse.pathExists(localDirectory);
-    if (!dirExists) {
-      this.logger.error(`uploadFolder failed: local directory does not exist: ${localDirectory}`);
-      throw new Error(`uploadFolder failed: local directory does not exist: ${localDirectory}`);
-    }
     try {
+      
+      const dirExists = await fse.pathExists(localDirectory);
+      if (!dirExists) {
+        this.logger.error(`uploadFolder failed: local directory does not exist: ${localDirectory}`);
+        throw new Error(`uploadFolder failed: local directory does not exist: ${localDirectory}`);
+      }
       this.logger.info(`Uploading files from ${localDirectory} to ${remoteDirectory}`);
       
       // Read all files from the local directory
@@ -326,7 +343,7 @@ class BunnyCDNStorage {
         });
       }));
     } catch (error) {
-      this.logger.error(`Error uploading files: ${error}`);
+      this.logger.error(`uploadFolder Error: ${error}`);
       throw error;
     }
   }
@@ -378,7 +395,7 @@ class BunnyCDNStorage {
       
       return await Promise.all(downloads);
     } catch (error) {
-      this.logger.error(`Error downloading files: ${error}`);
+      this.logger.error(`downloadFolder Error: ${error}`);
       throw error;
     }
   }
