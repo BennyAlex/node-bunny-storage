@@ -1,6 +1,6 @@
 {
   "name": "node-bunny-storage",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A simple wrapper for the bunnyCDN storage api",
   "repository": {
     "type": "git",
