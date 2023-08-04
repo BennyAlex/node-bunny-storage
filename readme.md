@@ -1,9 +1,11 @@
 # BunnyCDN Storage API Wrapper
 
 This is a Node.js library that provides a simple and convenient way to interact with BunnyCDN Storage.
+
 It allows to download and upload files and complete folders, and you can download and multiple files in parallel.
 There is also a built-in retry for failed request.
 You can exclude certain file types from being uploaded or downloaded when dealing with folders.
+The log level is also configurable.
 
 ## Installation
 
@@ -19,8 +21,8 @@ import BunnyCDNStorage from 'node-bunny-storage';
 
 const bunny = new BunnyCDNStorage('your-access-key', 'your-storage-zone-name');
 
-// you can also set the concurrency and the retryCount
-const bunny = new BunnyCDNStorage('your-access-key', 'your-storage-zone-name', 4, 1);
+// you can also set the concurrency, the retryCount and the log level
+const bunny = new BunnyCDNStorage('your-access-key', 'your-storage-zone-name', 4, 1, 'silent');
 ```
 ### List Files
 To list files from a remote directory:
