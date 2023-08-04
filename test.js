@@ -1,7 +1,7 @@
 import BunnyCDNStorage from './index.mjs';
 
 async function main() {
-  const bunny = new BunnyCDNStorage(process.env.TEST_API_KEY, process.env.TEST_STORAGE_NAME, 4, 1);
+  const bunny = new BunnyCDNStorage(process.env.TEST_API_KEY, process.env.TEST_STORAGE_NAME, 6, 1);
   
   // List files
   console.log('Listing files...');

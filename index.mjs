@@ -8,10 +8,10 @@ class BunnyCDNStorage {
   /**
    * @param {string} accessKey Your storage zone API access key. This is also your ftp password shown in the bunny dashboard.
    * @param {string} storageZoneName The name of your storage zone.
-   * @param {number} [concurrency=8] The max number of concurrent connections used for uploading and downloading folders. Defaults to 8.
+   * @param {number} [concurrency=16] The max number of concurrent connections used for listing files (when recursive is true) as well for uploading and downloading folders. Defaults to 16.
    * @param {number} [retryCount=2] The number of times to retry a failed request.
    */
-  constructor(accessKey, storageZoneName, concurrency = 8, retryCount = 2) {
+  constructor(accessKey, storageZoneName, concurrency = 16, retryCount = 2) {
     this.accessKey = accessKey;
     this.storageZoneName = storageZoneName;
     this.baseURL = 'https://storage.bunnycdn.com/';
@@ -80,7 +80,6 @@ class BunnyCDNStorage {
     const url = this._getFullStorageUrl(remoteDirectory);
     
     // console.log(`Listing files in ${url}`);
-    
     try {
       const response = await axios.get(url, {
         headers: {
@@ -92,11 +91,18 @@ class BunnyCDNStorage {
       let allFiles = response.data;
       
       if (recursive) {
+        const tasks = [];
+        
         for (const file of response.data) {
           if (file.IsDirectory) {
-            const subFiles = await this.listFiles(this._getRemotePathFromFileWithoutStorageZone(file) + file.ObjectName, recursive);
-            allFiles = [...allFiles, ...subFiles];
+            tasks.push(this.limit(() => this.listFiles(this._getRemotePathFromFileWithoutStorageZone(file) + file.ObjectName, recursive)));
           }
+        }
+        
+        const results = await Promise.all(tasks);
+        
+        for (const subFiles of results) {
+          allFiles = [...allFiles, ...subFiles];
         }
       }
       
