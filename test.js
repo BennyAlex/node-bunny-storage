@@ -10,8 +10,8 @@ async function main() {
   
   // Download a file
   console.log('Downloading file...');
-  const downloadPath = await bunny.downloadFile('/', files[0].ObjectName, './testDownload/singleFileTestDownload'); // download the first file from the root folder
-  console.log('File downloaded to:', downloadPath);
+  const downloadedFilePath  = await bunny.downloadFile('/', files[0].ObjectName, './testDownload/singleFileTestDownload'); // download the first file from the root folder
+  console.log('File downloaded to:', downloadedFilePath);
   
   // Upload a file
   console.log('Uploading file ' + files[0].ObjectName + ' ...');
@@ -27,8 +27,8 @@ async function main() {
   
   // Download many files
   console.log('Downloading many files...');
-  const downloadedFiles = await bunny.downloadFolder('/', './testDownload/downloadFolderTest', true); // download all files from the remote folder including subdirectories to the ./testDownload/downloadFolderTest folder
-  console.log('All downloaded files:', downloadedFiles);
+  const downloadedFilesPaths = await bunny.downloadFolder('/', './testDownload/downloadFolderTest', true); // download all files from the remote folder including subdirectories to the ./testDownload/downloadFolderTest folder
+  console.log('All downloaded files:', downloadedFilesPaths);
   
   console.log('TEST FINISHED');
 }
