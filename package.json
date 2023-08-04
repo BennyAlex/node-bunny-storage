@@ -1,0 +1,28 @@
+{
+  "name": "node-bunny-storage",
+  "version": "1.0.1",
+  "description": "A simple wrapper for the bunnyCDN storage api",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BennyAlex/node-bunny-storage.git"
+  },
+  "main": "index.mjs",
+  "type": "module",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [
+    "bunny",
+    "cdn",
+    "bunnycdn",
+    "storage"
+  ],
+  "author": "Benjamin Franz",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.4.0",
+    "axios-retry": "^3.6.0",
+    "fs-extra": "^11.1.1",
+    "p-limit": "^4.0.0"
+  }
+}
