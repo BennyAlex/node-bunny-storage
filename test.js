@@ -5,7 +5,7 @@ async function main() {
   
   // List files
   console.log('Listing files...');
-  const files = await bunny.listFiles('', true); // list all files from root folder recursively
+  const files = await bunny.listFiles('/', true); // list all files from root folder recursively
   console.log('All found files:', files);
   
   // Download a file

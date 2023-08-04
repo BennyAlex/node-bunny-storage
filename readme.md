@@ -24,7 +24,7 @@ const bunny = new BunnyCDNStorage('your-access-key', 'your-storage-zone-name', 4
 ### List Files
 To list files from a remote directory:
 ```javascript
-const files = await bunny.listFiles('', true); // list all files from root folder recursively
+const files = await bunny.listFiles('/', true); // list all files from root folder recursively
 ```
 
 ### Download File
