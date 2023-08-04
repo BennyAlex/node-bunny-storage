@@ -79,7 +79,7 @@ class BunnyCDNStorage {
   async listFiles(remoteDirectory = '/', recursive = false) {
     const url = this._getFullStorageUrl(remoteDirectory);
     
-    console.log(`Listing files in ${url}`);
+    // console.log(`Listing files in ${url}`);
     
     try {
       const response = await axios.get(url, {
@@ -168,7 +168,7 @@ class BunnyCDNStorage {
     
     const localPath = path.join(localDirectory, fileName);
     
-    console.log('downloadFile localPath:', localPath);
+    // console.log('downloadFile localPath:', localPath);
     
     await fse.ensureDir(localDirectory);
     
@@ -230,7 +230,7 @@ class BunnyCDNStorage {
         }
       }
     } catch (err) {
-      console.log(`Error reading directory ${dir}: ${err}`);
+      console.error(`Error reading directory ${dir}: ${err}`);
       process.exit(1);
     }
     return files;
@@ -251,7 +251,7 @@ class BunnyCDNStorage {
     // Read all files from the local directory
     const fileNames = await this._getLocalFiles(localDirectory, localDirectory, recursive);
     
-    console.log('Files to upload:', fileNames);
+    // console.log('Files to upload:', fileNames);
     
     // Upload all files concurrently with limit
     await Promise.all(fileNames.map((fileName) => {
@@ -277,19 +277,19 @@ class BunnyCDNStorage {
       const files = await this.listFiles(remoteDirectory, recursive);
       const filesToDownload = files.filter((file) => file.IsDirectory === false);
       
-      console.log('Files to download:', filesToDownload);
+      // console.log('Files to download:', filesToDownload);
       
       const downloads = [];
       for (const file of filesToDownload) {
         downloads.push(this.limit(async () => {
           const remotePath = this._getRemotePathFromFileWithoutStorageZone(file);
-          console.log('remotePath:', remotePath);
+          // console.log('remotePath:', remotePath);
           
           let downloadDestination = localDirectory;
           
           if (recursive && remotePath) downloadDestination = path.join(localDirectory, remotePath);
           
-          console.log('downloadFolder downloadDestination:', downloadDestination);
+          // console.log('downloadFolder downloadDestination:', downloadDestination);
           
           return await this.downloadFile(this._getRemotePathFromFileWithoutStorageZone(file), file.ObjectName, downloadDestination);
         }));
