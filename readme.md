@@ -3,6 +3,7 @@
 This is a Node.js library that provides a simple and convenient way to interact with BunnyCDN Storage.
 It allows to download and upload files and complete folders, and you can download and multiple files in parallel.
 There is also a built-in retry for failed request.
+You can exclude certain file types from being uploaded or downloaded when dealing with folders.
 
 ## Installation
 
@@ -36,25 +37,29 @@ const downloadedFilePath = await bunny.downloadFile('/', files[0].ObjectName, '.
 ### Upload File
 To upload a file to a remote directory:
 ```javascript
-await bunny.uploadFile('./testDownload/singleFileTestDownload/' + files[0].ObjectName, 'testRemoteSingleFileUpload'); // upload the file to /testRemoteSingleFileUpload folder
+// upload the file to /testRemoteSingleFileUpload folder
+await bunny.uploadFile('./testDownload/singleFileTestDownload/' + files[0].ObjectName, 'testRemoteSingleFileUpload');
 ```
 
 ### Delete File or Folder
 To delete a file or folder from a remote directory:
 ```javascript
-await bunny.delete('/', files[0].ObjectName); // delete the first file from the root folder
+// delete the first file from the root folder
+await bunny.delete('/', files[0].ObjectName);
 ```
 
 ### Upload Folder
 To upload a complete local folder:
 ```javascript
-await bunny.uploadFolder('./testDownload', 'testRemoteFolderUpload', true); // upload all files and subdirectories from the local ./testDownload folder to the remote /testRemoteFolderUpload folder
+// upload all files from the ./testDownload folder to the remote /testRemoteFolderUpload folder, except .html files
+await bunny.uploadFolder('./testDownload', 'testRemoteFolderUpload', true, ['.html']);
 ```
 
 ### Download Folder
 To download a complete remote folder:
 ```javascript
-const downloadedFilesPaths = await bunny.downloadFolder('/', './testDownload/downloadFolderTest', true); // download all files from the remote storage including subdirectories to the local ./testDownload/downloadFolderTest folder
+  // download all files from the remote folder including subdirectories to the ./testDownload/downloadFolderTest folder, except .png and .jpg files
+const downloadedFilesPaths = await bunny.downloadFolder('/', './testDownload/downloadFolderTest', true, ['.png', '.jpg']);
 ```
 
 ## Example

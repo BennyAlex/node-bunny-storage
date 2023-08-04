@@ -241,15 +241,24 @@ class BunnyCDNStorage {
    * @param {string} [localDirectory ='./']- The local directory path. Defaults to the current directory.
    * @param {string} [remoteDirectory='/']  - The remote directory path. Leave blank or use '/' to upload files to the root directory.
    * @param {boolean} [recursive=false] - Include local subdirectories.
+   * @param {string[]} [excludedFileTypes=[]] - File types to exclude from the upload.
    */
-  async uploadFolder(localDirectory = './', remoteDirectory = '/', recursive = false) {
+  async uploadFolder(localDirectory = './', remoteDirectory = '/', recursive = false, excludedFileTypes = []) {
     const dirExists = await fse.pathExists(localDirectory);
     if (!dirExists) {
       throw new Error(`uploadFolder failed: local directory does not exist: ${localDirectory}`);
     }
     
     // Read all files from the local directory
-    const fileNames = await this._getLocalFiles(localDirectory, localDirectory, recursive);
+    let fileNames = await this._getLocalFiles(localDirectory, localDirectory, recursive);
+    
+    // Filter out excluded file types
+    if (excludedFileTypes?.length) {
+      fileNames = fileNames.filter((fileName) => {
+        const ext = path.extname(fileName);
+        return !excludedFileTypes.includes(ext);
+      });
+    }
     
     // console.log('Files to upload:', fileNames);
     
@@ -271,11 +280,24 @@ class BunnyCDNStorage {
    * @param {string} [remoteDirectory='/']  The remote directory path. Leave blank or use '/' to download files from the root directory.
    * @param {string} [localDirectory='.'] The local directory path where the downloaded files should be saved. Defaults to the current directory.
    * @param {boolean} recursive Should the operation be performed recursively.
+   * @param {string[]} [excludedFileTypes=[]] Define file types that should not be downloaded, e.g. ['.pdf', '.jpg']
    */
-  async downloadFolder(remoteDirectory = '/', localDirectory = '.', recursive = false) {
+  async downloadFolder(remoteDirectory = '/', localDirectory = '.', recursive = false, excludedFileTypes = []) {
     try {
       const files = await this.listFiles(remoteDirectory, recursive);
-      const filesToDownload = files.filter((file) => file.IsDirectory === false);
+      
+      // filter out directories and excluded file types
+      let filesToDownload;
+      if (excludedFileTypes?.length) {
+        filesToDownload = files.filter((file) => {
+          const fileExtension = path.extname(file.ObjectName);
+          return (file.IsDirectory === false) && (!excludedFileTypes.includes(fileExtension));
+        });
+      } else {
+        filesToDownload = files.filter((file) => {
+          return (file.IsDirectory === false);
+        });
+      }
       
       // console.log('Files to download:', filesToDownload);
       

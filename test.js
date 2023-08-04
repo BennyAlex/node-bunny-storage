@@ -10,24 +10,29 @@ async function main() {
   
   // Download a file
   console.log('Downloading file...');
-  const downloadedFilePath  = await bunny.downloadFile('/', files[0].ObjectName, './testDownload/singleFileTestDownload'); // download the first file from the root folder
+  // download the first file from the root folder
+  const downloadedFilePath = await bunny.downloadFile('/', files[0].ObjectName, './testDownload/singleFileTestDownload');
   console.log('File downloaded to:', downloadedFilePath);
   
   // Upload a file
   console.log('Uploading file ' + files[0].ObjectName + ' ...');
-  await bunny.uploadFile('./testDownload/singleFileTestDownload/' + files[0].ObjectName, 'testRemoteSingleFileUpload'); // upload the file to /testRemoteSingleFileUpload folder
+  // upload the file to /testRemoteSingleFileUpload folder
+  await bunny.uploadFile('./testDownload/singleFileTestDownload/' + files[0].ObjectName, 'testRemoteSingleFileUpload');
   
   // Delete a file
   console.log('Deleting file...');
-  await bunny.delete('/', files[0].ObjectName); // delete the first file from the root folder
+  // delete the first file from the root folder
+  await bunny.delete('/', files[0].ObjectName);
   
   // Upload many files
-  console.log('Uploading many files...');
-  await bunny.uploadFolder('./testDownload', 'testRemoteFolderUpload', true); // upload all files from the ./testDownload folder to the remote /testRemoteFolderUpload folder
+  console.log('Uploading folder...');
+  // upload all files from the ./testDownload folder to the remote /testRemoteFolderUpload folder, except .html files
+  await bunny.uploadFolder('./testDownload', 'testRemoteFolderUpload', true, ['.html']);
   
   // Download many files
-  console.log('Downloading many files...');
-  const downloadedFilesPaths = await bunny.downloadFolder('/', './testDownload/downloadFolderTest', true); // download all files from the remote folder including subdirectories to the ./testDownload/downloadFolderTest folder
+  console.log('Downloading folder...');
+  // download all files from the remote folder including subdirectories to the ./testDownload/downloadFolderTest folder, except .png and .jpg files
+  const downloadedFilesPaths = await bunny.downloadFolder('/', './testDownload/downloadFolderTest', true, ['.png', '.jpg']);
   console.log('All downloaded files:', downloadedFilesPaths);
   
   console.log('TEST FINISHED');
