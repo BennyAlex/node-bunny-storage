@@ -1,12 +1,14 @@
 import BunnyCDNStorage from './index.mjs';
 
 async function main() {
-  const bunny = new BunnyCDNStorage(process.env.TEST_API_KEY, process.env.TEST_STORAGE_NAME, 6, 1, 'info');
+  const bunny = new BunnyCDNStorage(process.env.TEST_API_KEY, process.env.TEST_STORAGE_NAME, 24, 3, 'info');
   
   // List files
   console.log('Listing files...');
-  const files = await bunny.listFiles('/', true); // list all files from root folder recursively
-  console.log('All found files:', files);
+  // list all files from root folder recursively
+  const files = await bunny.listFiles('/', true);
+  
+  console.log('Total number of found files:', files.length);
   
   // Download a file
   console.log('Downloading file...');
@@ -38,4 +40,6 @@ async function main() {
   console.log('TEST FINISHED');
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.log(err);
+});
