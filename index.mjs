@@ -38,8 +38,8 @@ class BunnyCDNStorage {
     
     // Setup axios-retry
     axiosRetry(axios, {
-      retries: retryCount, retryDelay: (retryCount) => {
-        return retryCount * 2000;
+      retries: retryCount, retryDelay: (numberOfRetries) => {
+        return numberOfRetries * 2000;
       }
     });
   }
@@ -142,7 +142,7 @@ class BunnyCDNStorage {
       this.logger.info(`Found ${files.length} files in ${url}`);
       return files;
     } catch (error) {
-      this.logger.error(`Failed to list files in ${remoteDirectory}: ${error}`);
+      this.logger.error(`Failed to list files in ${remoteDirectory}: ${error}. URL: ${this._getFullStorageUrl(remoteDirectory)}`);
       throw error;
     }
   }
@@ -176,7 +176,7 @@ class BunnyCDNStorage {
       
       return await axios.put(url, fileData, config);
     } catch (error) {
-      this.logger.error(`uploadFile Error: ${error}, localFilePath: ${localFilePath}, remoteDirectory: ${remoteDirectory}`);
+      this.logger.error(`uploadFile Error: ${error}, localFilePath: ${localFilePath}, remoteDirectory: ${remoteDirectory}. URL: ${this._getFullStorageUrl(remoteDirectory, fileName)}`);
       throw error;
       
     }
@@ -222,12 +222,12 @@ class BunnyCDNStorage {
           resolve(localPath);
         });
         fileStream.on('error', () => {
-          this.logger.error(`Error downloading ${fileName} to ${localPath}`);
+          this.logger.error(`Error downloading ${fileName} to ${localPath}. URL: ${url}`);
           reject(localPath);
         });
       });
     } catch (error) {
-      this.logger.error(`downloadFile Error:: ${error}, remoteDirectory: ${remoteDirectory}, fileName: ${fileName}, localDirectory: ${localDirectory}`);
+      this.logger.error(`downloadFile Error:: ${error}, remoteDirectory: ${remoteDirectory}, fileName: ${fileName}, localDirectory: ${localDirectory}, url: ${this._getFullStorageUrl(remoteDirectory, fileName)}`);
       throw error;
     }
   }
@@ -256,7 +256,7 @@ class BunnyCDNStorage {
       this.logger.info(`Deleted ${fileName} from ${remoteDirectory}, it's url was ${url}`);
       return url;
     } catch (error) {
-      this.logger.error(`delete Error: ${error}, remoteDirectory: ${remoteDirectory}, file: ${fileName}`);
+      this.logger.error(`delete Error: ${error}, remoteDirectory: ${remoteDirectory}, file: ${fileName}, url: ${this._getFullStorageUrl(remoteDirectory, fileName)}`);
       throw error;
     }
   }
