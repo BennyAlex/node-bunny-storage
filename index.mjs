@@ -329,7 +329,8 @@ class BunnyCDNStorage {
         await this.uploadFile(filePath, remoteDirectory);
         
         if (recursive && fse.lstatSync(filePath).isDirectory()) {
-          await this.uploadFolder(filePath, path.join(remoteDirectory, fileName), recursive);
+          const uploads = await this.uploadFolder(filePath, path.join(remoteDirectory, fileName), recursive);
+          uploadedFiles.push(...uploads);
         }
         
         uploadedFiles.push(fileName);
