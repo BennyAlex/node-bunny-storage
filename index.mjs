@@ -277,7 +277,7 @@ class BunnyCDNStorage {
         const fullPath = path.join(dir, item);
         const itemStat = await fse.stat(fullPath);
         if (itemStat.isDirectory()) {
-          if (recursive) files = files.concat(await this._getLocalFiles(root, fullPath));
+          if (recursive) files = files.concat(await this._getLocalFiles(root, fullPath, recursive));
         } else {
           const relativePath = path.relative(root, fullPath);
           files.push(relativePath);
