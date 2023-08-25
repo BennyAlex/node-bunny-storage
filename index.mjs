@@ -176,7 +176,7 @@ class BunnyCDNStorage {
       
       return await axios.put(url, fileData, config);
     } catch (error) {
-      this.logger.error(`uploadFile Error: ${error}, localFilePath: ${localFilePath}, remoteDirectory: ${remoteDirectory}. URL: ${this._getFullStorageUrl(remoteDirectory, fileName)}`);
+      this.logger.error(`uploadFile Error: ${error}, localFilePath: ${localFilePath}, remoteDirectory: ${remoteDirectory}. URL: ${this._getFullStorageUrl(remoteDirectory, path.basename(localFilePath))}`);
       throw error;
       
     }
@@ -262,17 +262,16 @@ class BunnyCDNStorage {
   }
   
   /**
-   * Get all filenames in a local directory.
-   * @param root
-   * @param dir
-   * @param recursive
+   * Get all file and folder paths from a local directory.
+   * @param {string} localDirectory
    * @returns {Promise<*[]>}
    * @private
    */
-  async _getLocalFiles(root, dir = root, recursive = false) {
+  async _getLocalFiles(localDirectory) {
     try {
       let files = [];
-      const items = await fse.readdir(dir);
+      const items = await fse.readdir(localDirectory);
+      
       for (const item of items) {
         const fullPath = path.join(dir, item);
         const itemStat = await fse.stat(fullPath);
@@ -304,43 +303,42 @@ class BunnyCDNStorage {
         this.logger.error(`uploadFolder failed: local directory does not exist: ${localDirectory}`);
         throw new Error(`uploadFolder failed: local directory does not exist: ${localDirectory}`);
       }
+      
       this.logger.info(`Uploading files from ${localDirectory} to ${remoteDirectory}`);
       
       // Read all files from the local directory
-      let fileNames = await this._getLocalFiles(localDirectory, localDirectory, recursive);
+      let items = await fse.readdir(localDirectory);
       
-      // Filter out excluded file types
-      if (excludedFileTypes?.length) {
-        fileNames = fileNames.filter((fileName) => {
-          const ext = path.extname(fileName);
-          return !excludedFileTypes.includes(ext);
-        });
-      }
-      
-      const totalFilesToUpload = fileNames.length;
       const uploadedFiles = [];
-      let uploadedFilesCount = 0;
       
-      for (const fileName of fileNames) {
-        await this.sema.acquire();
+      for (const item of items) {
+        const fullPath = path.join(localDirectory, item);
+        const relativePath = path.relative(localDirectory, fullPath);
+        const itemStat = await fse.stat(fullPath);
         
-        const filePath = path.join(localDirectory, fileName);
-        
-        await this.uploadFile(filePath, remoteDirectory);
-        
-        if (recursive && fse.lstatSync(filePath).isDirectory()) {
-          const uploads = await this.uploadFolder(filePath, path.join(remoteDirectory, fileName), recursive);
-          uploadedFiles.push(...uploads);
+        if (itemStat.isDirectory()) {
+          if (recursive) {
+            const newRemoteDirectory = path.join(remoteDirectory, relativePath);
+            const uploads = await this.uploadFolder(fullPath, newRemoteDirectory, recursive, excludedFileTypes);
+            uploadedFiles.push(...uploads);
+          }
+        } else {
+          // Filter out excluded file types
+          if (excludedFileTypes?.length) {
+            const ext = path.extname(relativePath);
+            if (excludedFileTypes.includes(ext)) continue;
+          }
+          
+          await this.uploadFile(fullPath, remoteDirectory);
+          
+          uploadedFiles.push(fullPath);
+          
+          this.logger.info(`Uploaded ${fullPath} to ${remoteDirectory}`);
+          this.sema.release();
         }
-        
-        uploadedFiles.push(fileName);
-        uploadedFilesCount++;
-        
-        this.logger.info(`Uploaded ${uploadedFilesCount} of ${totalFilesToUpload} files from ${localDirectory} to ${remoteDirectory}`);
-        this.sema.release()
       }
       
-      this.logger.info(`Uploaded ${uploadedFilesCount} files from ${localDirectory} to ${remoteDirectory}`);
+      this.logger.info(`Uploaded ${uploadedFiles.length} files from ${localDirectory} to ${remoteDirectory}`);
       return uploadedFiles;
     } catch (error) {
       this.logger.error(`uploadFolder Error: ${error}, localDirectory: ${localDirectory}, remoteDirectory: ${remoteDirectory}`);
@@ -393,7 +391,7 @@ class BunnyCDNStorage {
         downloadedCount++;
         this.logger.info(`Downloaded ${downloadedCount} of ${totalFilesToDownload} files`);
         
-        this.sema.release()
+        this.sema.release();
       }
       
       this.logger.info(`Downloaded ${downloadedCount} files from ${remoteDirectory} to ${localDirectory}`);
