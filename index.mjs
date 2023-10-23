@@ -11,18 +11,19 @@ const logFormat = format.printf(({level, message, label, timestamp}) => {
 
 class BunnyCDNStorage {
   /**
-   * @param {string} accessKey Your storage zone API access key. This is also your ftp password shown in the bunny dashboard.
-   * @param {string} storageZoneName The name of your storage zone.
-   * @param {number} [concurrency=16] The max number of concurrent connections used for listing files (when recursive is true) as well for uploading and downloading folders. Defaults to 16.
-   * @param {number} [retryCount=2] The number of times to retry a failed request.
-   * @param {string} [logLevel='error'] The log level for this module. Can be 'info', 'error' or 'silent'. Defaults to 'error'.
+   * @param {object} options  The options object.
+   * @param {string} options.accessKey Your storage zone API access key. This is also your ftp password shown in the bunny dashboard.
+   * @param {string} options.storageZoneName The name of your storage zone.
+   * @param {number} [options.concurrency=16] The max number of concurrent connections used for listing files (when recursive is true) as well for uploading and downloading folders. Defaults to 16.
+   * @param {number} [options.retryCount=2] The number of times to retry a failed request.
+   * @param {string} [options.logLevel='error'] The log level for this module. Can be 'info', 'error' or 'silent'. Defaults to 'error'.
    */
-  constructor(accessKey, storageZoneName, concurrency = 16, retryCount = 2, logLevel = 'error') {
+  constructor({accessKey, storageZoneName, concurrency = 16, retryCount = 2, logLevel = 'error' }) {
     this.accessKey = accessKey;
     this.storageZoneName = storageZoneName;
     this.baseURL = 'https://storage.bunnycdn.com/';
     this.sema = new Sema(concurrency);
-    
+
     this.logger = createLogger({
       level: logLevel,
       format: format.combine(
@@ -92,15 +93,15 @@ class BunnyCDNStorage {
   }
   
   /**
-   * Get the remote path for a file.
+   * Get the remote path for a file without the storage zone name. Does not include the file name.
    * @param file
-   * @returns {string} The remote path without the storage zone name.
-   * @private
+   * @returns {string} The remote path without the storage zone name. Does not include the file name.
    */
-  _getRemotePathFromFileWithoutStorageZone(file) {
+  getRemotePathFromFileWithoutStorageZone(file) {
     try {
-      const remotePath = file.Path;
-      if (remotePath.startsWith('/' + this.storageZoneName + '/')) return remotePath.slice(this.storageZoneName.length + 2);
+      let remotePath = file.Path;
+      if (remotePath.startsWith('/' + this.storageZoneName + '/')) remotePath = remotePath.slice(this.storageZoneName.length + 2);
+      if (!remotePath) return '/';
       return remotePath;
     } catch (error) {
       this.logger.error(`Failed to get remote path from file ${file}: ${error}`);
@@ -110,10 +111,11 @@ class BunnyCDNStorage {
   
   /**
    * List all files in a directory.
-   * @param {string} [remoteDirectory='/'] The directory path. Leave blank or use '/' to list files in the root directory.
-   * @param {boolean} [recursive=false] Should the list go through each subdirectory recursively.
+   * @param {object} options The options object.
+   * @param {string} [options.remoteDirectory='/'] The directory path. Leave blank or use '/' to list files in the root directory.
+   * @param {boolean} [options.recursive=false] Should the list go through each subdirectory recursively.
    */
-  async listFiles(remoteDirectory = '/', recursive = false) {
+  async listFiles({remoteDirectory = '/', recursive = false}) {
     try {
       const url = this._getFullStorageUrl(remoteDirectory);
       
@@ -130,7 +132,10 @@ class BunnyCDNStorage {
       
       for (const file of response.data) {
         if (file.IsDirectory && recursive) {
-          const subFiles = await this.listFiles(this._getRemotePathFromFileWithoutStorageZone(file) + file.ObjectName, recursive);
+          const subFiles = await this.listFiles({
+            remoteDirectory: this.getRemotePathFromFileWithoutStorageZone(file) + file.ObjectName,
+            recursive
+          });
           for (const subFile of subFiles) {
             files.push(subFile);
           }
@@ -149,10 +154,11 @@ class BunnyCDNStorage {
   
   /**
    * Upload a file to BunnyCDN storage.
-   * @param {string} [localFilePath='.'] - The local file path. Defaults to the current directory.
-   * @param {string} [remoteDirectory='/']  - The remote directory path. Leave blank or use '/' to upload to the root directory.
+   * @param {object} options The options object.
+   * @param {string} [options.localFilePath='.'] - The local file path. Defaults to the current directory.
+   * @param {string} [options.remoteDirectory='/']  - The remote directory path. Leave blank or use '/' to upload to the root directory.
    */
-  async uploadFile(localFilePath = '.', remoteDirectory = '/') {
+  async uploadFile({localFilePath = '.', remoteDirectory = '/'}) {
     try {
       const fileExists = await fse.pathExists(localFilePath);
       if (!fileExists) {
@@ -184,12 +190,13 @@ class BunnyCDNStorage {
   
   /**
    * Download a file from BunnyCDN storage.
-   * @param {string} [remoteDirectory='/']  - The remote directory path. Leave blank or use '/' to download a file from the root directory.
-   * @param {string} fileName - The name of the file to download.
-   * @param {string} [localDirectory='.'] - The local directory to download the file to. Defaults to the current directory.
+   * @param {object} options The options object.
+   * @param {string} [options.remoteDirectory='/']  - The remote directory path. Leave blank or use '/' to download a file from the root directory.
+   * @param {string} options.fileName - The name of the file to download.
+   * @param {string} [options.localDirectory='.'] - The local directory to download the file to. Defaults to the current directory.
    * @returns {Promise<string>} - Returns a promise that resolves with the local file path of the downloaded file.
    */
-  async downloadFile(remoteDirectory = '/', fileName, localDirectory = '.') {
+  async downloadFile({remoteDirectory = '/', fileName, localDirectory = '.'}) {
     try {
       if (!fileName) {
         this.logger.error('downloadFile: No file name provided');
@@ -235,10 +242,11 @@ class BunnyCDNStorage {
   
   /**
    * Delete a file from BunnyCDN storage.
-   * @param {string} [remoteDirectory='/'] - The remote directory path. Leave blank or use '/' to delete a file from the root directory.
-   * @param {string} fileName - The name of the file to delete. If it is a directory, the directory and all files in the directory will be deleted. If remoteDirectory and fileName are blank, all files in the storage zone will be deleted.
+   * @param {object} options The options object.
+   * @param {string} [options.remoteDirectory='/'] - The remote directory path. Leave blank or use '/' to delete a file from the root directory.
+   * @param {string} options.fileName - The name of the file to delete. If it is a directory, the directory and all files in the directory will be deleted. If remoteDirectory and fileName are blank, all files in the storage zone will be deleted.
    */
-  async delete(remoteDirectory = '/', fileName) {
+  async delete({remoteDirectory = '/', fileName}) {
     try {
       if (!fileName) {
         this.logger.error('delete: No file name provided');
@@ -262,41 +270,15 @@ class BunnyCDNStorage {
   }
   
   /**
-   * Get all file and folder paths from a local directory.
-   * @param {string} localDirectory
-   * @returns {Promise<*[]>}
-   * @private
-   */
-  async _getLocalFiles(localDirectory) {
-    try {
-      let files = [];
-      const items = await fse.readdir(localDirectory);
-      
-      for (const item of items) {
-        const fullPath = path.join(dir, item);
-        const itemStat = await fse.stat(fullPath);
-        if (itemStat.isDirectory()) {
-          if (recursive) files = files.concat(await this._getLocalFiles(root, fullPath, recursive));
-        } else {
-          const relativePath = path.relative(root, fullPath);
-          files.push(relativePath);
-        }
-      }
-      return files;
-    } catch (error) {
-      this.logger.error(`Error reading directory ${dir}: ${error}`);
-      throw error;
-    }
-  }
-  
-  /**
    * Upload many files to BunnyCDN storage.
-   * @param {string} [localDirectory ='./']- The local directory path. Defaults to the current directory.
-   * @param {string} [remoteDirectory='/']  - The remote directory path. Leave blank or use '/' to upload files to the root directory.
-   * @param {boolean} [recursive=false] - Include local subdirectories.
-   * @param {string[]} [excludedFileTypes=[]] - File types to exclude from the upload.
+   * @param {object} options The options object.
+   * @param {string} [options.localDirectory ='./']- The local directory path. Defaults to the current directory.
+   * @param {string} [options.remoteDirectory='/']  - The remote directory path. Leave blank or use '/' to upload files to the root directory.
+   * @param {boolean} [options.recursive=false] - Include local subdirectories.
+   * @param {string[]} [options.excludedFileTypes=[]] - File types to exclude from the upload.
+   * @param {function} options.fileFilter - Can be used to exclude individual files. The function receives the filepath as a parameter. If the callback returns false, the file will not be uploaded.
    */
-  async uploadFolder(localDirectory = './', remoteDirectory = '/', recursive = false, excludedFileTypes = []) {
+  async uploadFolder({localDirectory = './', remoteDirectory = '/', recursive = false, excludedFileTypes = [], fileFilter}) {
     try {
       const dirExists = await fse.pathExists(localDirectory);
       if (!dirExists) {
@@ -319,7 +301,13 @@ class BunnyCDNStorage {
         if (itemStat.isDirectory()) {
           if (recursive) {
             const newRemoteDirectory = path.join(remoteDirectory, relativePath);
-            const uploads = await this.uploadFolder(fullPath, newRemoteDirectory, recursive, excludedFileTypes);
+            const uploads = await this.uploadFolder({
+              localDirectory: fullPath,
+              remoteDirectory: newRemoteDirectory,
+              recursive,
+              excludedFileTypes,
+              fileFilter
+            });
             uploadedFiles.push(...uploads);
           }
         } else {
@@ -328,8 +316,17 @@ class BunnyCDNStorage {
             const ext = path.extname(relativePath);
             if (excludedFileTypes.includes(ext)) continue;
           }
+
+          // Filter out files using the fileFilter function
+          if (fileFilter) {
+            const shouldUpload = fileFilter(relativePath);
+            if (!shouldUpload) continue;
+          }
           
-          await this.uploadFile(fullPath, remoteDirectory);
+          await this.uploadFile({
+            localFilePath: fullPath,
+            remoteDirectory
+          });
           
           uploadedFiles.push(fullPath);
           
@@ -347,45 +344,50 @@ class BunnyCDNStorage {
   }
   
   /**
-   * @param {string} [remoteDirectory='/']  The remote directory path. Leave blank or use '/' to download files from the root directory.
-   * @param {string} [localDirectory='.'] The local directory path where the downloaded files should be saved. Defaults to the current directory.
-   * @param {boolean} recursive Should the operation be performed recursively.
-   * @param {string[]} [excludedFileTypes=[]] Define file types that should not be downloaded, e.g. ['.pdf', '.jpg']
+   * Download a folder from BunnyCDN storage.
+   * @param {object} options The options object.
+   * @param {string} [options.remoteDirectory='/']  The remote directory path. Leave blank or use '/' to download files from the root directory.
+   * @param {string} [options.localDirectory='.'] The local directory path where the downloaded files should be saved. Defaults to the current directory.
+   * @param {boolean} [options.recursive=fales] Should the operation be performed recursively.
+   * @param {string[]} [options.excludedFileTypes=[]] Define file types that should not be downloaded, e.g. ['.pdf', '.jpg']
+   * @param {function} options.fileFilter Can be used to exclude individual files. The function receives the remote filepath (without the storage zone) as a parameter. If the callback returns false, the file will not be downloaded.
    */
-  async downloadFolder(remoteDirectory = '/', localDirectory = '.', recursive = false, excludedFileTypes = []) {
+  async downloadFolder({remoteDirectory = '/', localDirectory = '.', recursive = false, excludedFileTypes = [], fileFilter}) {
     try {
-      const files = await this.listFiles(remoteDirectory, recursive);
+      const files = await this.listFiles({
+        remoteDirectory, recursive
+      });
       
       // filter out directories and excluded file types
-      let filesToDownload;
-      if (excludedFileTypes?.length) {
-        filesToDownload = files.filter((file) => {
+      const filesToDownload = files.filter((file) => {
           const fileExtension = path.extname(file.ObjectName);
-          return (file.IsDirectory === false) && (!excludedFileTypes.includes(fileExtension));
+          if (file.IsDirectory) return false;
+          else if (excludedFileTypes?.length && excludedFileTypes.includes(fileExtension)) return false;
+          else if (fileFilter) return fileFilter(this.getRemotePathFromFileWithoutStorageZone(file) + file.ObjectName);
+          else return true;
         });
-      } else {
-        filesToDownload = files.filter((file) => {
-          return (file.IsDirectory === false);
-        });
-      }
-      
-      this.logger.info(`Downloading ${filesToDownload.length} files from ${remoteDirectory} to ${localDirectory}`);
-      
+
       const totalFilesToDownload = filesToDownload.length;
+
+      this.logger.info(`Downloading ${totalFilesToDownload} files from ${remoteDirectory} to ${localDirectory}`);
+
       let downloadedCount = 0;
       const downloadPaths = [];
-      
+
       for (const file of filesToDownload) {
-        
         await this.sema.acquire();
         
-        const remotePath = this._getRemotePathFromFileWithoutStorageZone(file);
+        const remotePath = this.getRemotePathFromFileWithoutStorageZone(file);
         
         let downloadDestination = localDirectory;
         
         if (recursive && remotePath) downloadDestination = path.join(localDirectory, remotePath);
         
-        const downloadPath = await this.downloadFile(this._getRemotePathFromFileWithoutStorageZone(file), file.ObjectName, downloadDestination);
+        const downloadPath = await this.downloadFile({
+          remoteDirectory: remotePath,
+          fileName: file.ObjectName,
+          localDirectory: downloadDestination
+        });
         downloadPaths.push(downloadPath);
         
         downloadedCount++;
