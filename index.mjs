@@ -18,7 +18,7 @@ class BunnyCDNStorage {
    * @param {number} [options.retryCount=2] The number of times to retry a failed request.
    * @param {string} [options.logLevel='error'] The log level for this module. Can be 'info', 'error' or 'silent'. Defaults to 'error'.
    */
-  constructor({accessKey, storageZoneName, concurrency = 16, retryCount = 2, logLevel = 'error' }) {
+  constructor({accessKey, storageZoneName, concurrency = 16, retryCount = 2, logLevel = 'error'}) {
     this.accessKey = accessKey;
     this.storageZoneName = storageZoneName;
     this.baseURL = 'https://storage.bunnycdn.com/';
@@ -36,7 +36,7 @@ class BunnyCDNStorage {
         })
       ]
     });
-    
+
     // Setup axios-retry
     axiosRetry(axios, {
       retries: retryCount, retryDelay: (numberOfRetries) => {
@@ -44,7 +44,7 @@ class BunnyCDNStorage {
       }
     });
   }
-  
+
   /**
    * Get the file path for a file.
    * @param {string} directory - The remote directory path.
@@ -55,26 +55,26 @@ class BunnyCDNStorage {
   _getFilePath(directory, fileName) {
     try {
       let filePath = '';
-      
+
       if (directory && directory !== '/') {
         if (directory.startsWith('/')) directory = directory.slice(1);
         if (directory.endsWith('/')) directory = directory.slice(0, -1);
         filePath += `${directory}/`;
       }
-      
+
       if (fileName) {
         if (fileName.startsWith('/')) fileName = fileName.slice(1);
         if (fileName.endsWith('/')) fileName = fileName.slice(0, -1);
         filePath += fileName;
       }
-      
+
       return filePath;
     } catch (error) {
       this.logger.error(`Failed to generate file path for ${directory} and ${fileName}: ${error}`);
       throw error;
     }
   }
-  
+
   /**
    * Generate the full storage URL for a file for the BunnyCDN API.
    * @param {string} directory - The remote directory path.
@@ -91,7 +91,7 @@ class BunnyCDNStorage {
       throw error;
     }
   }
-  
+
   /**
    * Get the remote path for a file without the storage zone name. Does not include the file name.
    * @param file
@@ -108,7 +108,7 @@ class BunnyCDNStorage {
       throw error;
     }
   }
-  
+
   /**
    * List all files in a directory.
    * @param {object} options The options object.
@@ -117,57 +117,71 @@ class BunnyCDNStorage {
    * @param {boolean} [options.includeFolders=false] Should folders be included in the list.
    * @param {string[]} [options.excludedFileTypes=[]] Define file types that should not be included, e.g. ['.pdf', '.jpg']
    * @param {function} options.fileFilter Can be used to exclude individual files. The function receives the remote filepath (without the storage zone) as a parameter. If the callback returns false, the file will not be included.
+   * @param {boolean} [_isRecursiveCall=false] Used internally to keep track of recursive calls. Only needed internally.
    */
-  async listFiles({remoteDirectory = '/', recursive = false, includeFolders = false, excludedFileTypes = [], fileFilter}) {
+  async listFiles({
+                    remoteDirectory = '/',
+                    recursive = false,
+                    includeFolders = false,
+                    excludedFileTypes = [],
+                    fileFilter
+                  }, _isRecursiveCall = false) {
     try {
       const url = this._getFullStorageUrl(remoteDirectory);
-      
+
       this.logger.info(`Listing files in ${url}`);
-      
+
       const response = await axios.get(url, {
         headers: {
           'AccessKey': this.accessKey,
           'Content-Type': 'application/json'
         }
       });
-      
+
       const files = [];
 
       const pushFileIfAllowed = (file) => {
         const ext = path.extname(file.ObjectName);
-        if (excludedFileTypes?.length && excludedFileTypes.includes(ext)) return;
+        if (excludedFileTypes?.length && excludedFileTypes.includes(ext)) {
+          this.logger.info(`Excluding file due to file type: ${file.ObjectName}`);
+          return;
+        }
         if (fileFilter) {
           const shouldInclude = fileFilter(this.getRemotePathFromFileWithoutStorageZone(file) + file.ObjectName);
-          if (!shouldInclude) return;
+          if (!shouldInclude) {
+            this.logger.info(`Excluding file due to fileFilter: ${file.ObjectName}`);
+            return;
+          }
         }
         files.push(file);
       }
-      
+
       for (const file of response.data) {
         if (file.IsDirectory) {
           if (recursive) {
             const subFiles = await this.listFiles({
               remoteDirectory: this.getRemotePathFromFileWithoutStorageZone(file) + file.ObjectName,
-              recursive
-            });
-            for (const subFile of subFiles) {
-              pushFileIfAllowed(subFile)
-            }
+              recursive,
+              includeFolders,
+              excludedFileTypes,
+              fileFilter
+            }, true);
+            files.push(...subFiles);
           }
           if (includeFolders) files.push(file);
         } else {
           pushFileIfAllowed(file)
         }
       }
-      
-      this.logger.info(`Found ${files.length} files in ${url}`);
+
+      if (!_isRecursiveCall) this.logger.info(`Number of found files totally ${files.length}`);
       return files;
     } catch (error) {
       this.logger.error(`Failed to list files in ${remoteDirectory}: ${error}. URL: ${this._getFullStorageUrl(remoteDirectory)}`);
       throw error;
     }
   }
-  
+
   /**
    * Upload a file to BunnyCDN storage.
    * @param {object} options The options object.
@@ -181,29 +195,29 @@ class BunnyCDNStorage {
         this.logger.error(`Upload failed: File does not exist: ${localFilePath}`);
         throw new Error(`Upload failed: File does not exist: ${localFilePath}`);
       }
-      
+
       this.logger.info(`Uploading ${localFilePath} to ${remoteDirectory}`);
-      
+
       const fileData = fse.createReadStream(localFilePath);
       const fileName = path.basename(localFilePath); // Extract the file name from the local file path
-      
+
       const url = this._getFullStorageUrl(remoteDirectory, fileName);
-      
+
       const config = {
         headers: {
           'AccessKey': this.accessKey,
           'Content-Type': 'application/octet-stream'
         }
       };
-      
+
       return await axios.put(url, fileData, config);
     } catch (error) {
       this.logger.error(`uploadFile Error: ${error}, localFilePath: ${localFilePath}, remoteDirectory: ${remoteDirectory}. URL: ${this._getFullStorageUrl(remoteDirectory, path.basename(localFilePath))}`);
       throw error;
-      
+
     }
   }
-  
+
   /**
    * Download a file from BunnyCDN storage.
    * @param {object} options The options object.
@@ -218,26 +232,26 @@ class BunnyCDNStorage {
         this.logger.error('downloadFile: No file name provided');
         throw new Error('downloadFile: No file name provided');
       }
-      
+
       this.logger.info(`Downloading ${fileName} from ${remoteDirectory}`);
-      
+
       const url = this._getFullStorageUrl(remoteDirectory, fileName);
-      
+
       const response = await axios.get(url, {
         responseType: 'stream',
         headers: {
           'AccessKey': this.accessKey
         }
       });
-      
+
       const localPath = path.join(localDirectory, fileName);
-      
+
       await fse.ensureDir(localDirectory);
-      
+
       // Create a writable stream and pipe the response data to it
       const fileStream = fse.createWriteStream(localPath);
       response.data.pipe(fileStream);
-      
+
       // Return a promise that resolves when the file has finished downloading
       return new Promise((resolve, reject) => {
         fileStream.on('finish', () => {
@@ -254,8 +268,8 @@ class BunnyCDNStorage {
       throw error;
     }
   }
-  
-  
+
+
   /**
    * Delete a file from BunnyCDN storage.
    * @param {object} options The options object.
@@ -276,7 +290,7 @@ class BunnyCDNStorage {
           'Content-Type': 'application/json'
         }
       });
-      
+
       this.logger.info(`Deleted ${fileName} from ${remoteDirectory}, it's url was ${url}`);
       return url;
     } catch (error) {
@@ -284,7 +298,7 @@ class BunnyCDNStorage {
       throw error;
     }
   }
-  
+
   /**
    * Upload many files to BunnyCDN storage.
    * @param {object} options The options object.
@@ -294,37 +308,44 @@ class BunnyCDNStorage {
    * @param {string[]} [options.excludedFileTypes=[]] - File types to exclude from the upload.
    * @param {function} options.fileFilter - Can be used to exclude individual files. The function receives the filepath as a parameter. If the callback returns false, the file will not be uploaded.
    */
-  async uploadFolder({localDirectory = './', remoteDirectory = '/', recursive = false, excludedFileTypes = [], fileFilter}) {
+  async uploadFolder({
+                       localDirectory = './',
+                       remoteDirectory = '/',
+                       recursive = false,
+                       excludedFileTypes = [],
+                       fileFilter
+                     }) {
     try {
       const dirExists = await fse.pathExists(localDirectory);
       if (!dirExists) {
         this.logger.error(`uploadFolder failed: local directory does not exist: ${localDirectory}`);
         throw new Error(`uploadFolder failed: local directory does not exist: ${localDirectory}`);
       }
-      
+
       this.logger.info(`Uploading files from ${localDirectory} to ${remoteDirectory}`);
-      
+
       // Read all files from the local directory
       let items = await fse.readdir(localDirectory);
-      
-      const uploadedFiles = [];
-      
+
+      const promises = [];
+
       for (const item of items) {
         const fullPath = path.join(localDirectory, item);
         const relativePath = path.relative(localDirectory, fullPath);
         const itemStat = await fse.stat(fullPath);
-        
+
         if (itemStat.isDirectory()) {
           if (recursive) {
             const newRemoteDirectory = path.join(remoteDirectory, relativePath);
-            const uploads = await this.uploadFolder({
-              localDirectory: fullPath,
-              remoteDirectory: newRemoteDirectory,
-              recursive,
-              excludedFileTypes,
-              fileFilter
-            });
-            uploadedFiles.push(...uploads);
+            promises.push(
+              this.uploadFolder({
+                localDirectory: fullPath,
+                remoteDirectory: newRemoteDirectory,
+                recursive,
+                excludedFileTypes,
+                fileFilter
+              })
+            );
           }
         } else {
           // Filter out excluded file types
@@ -333,24 +354,26 @@ class BunnyCDNStorage {
             if (excludedFileTypes.includes(ext)) continue;
           }
 
-          // Filter out files using the fileFilter function
+          // Filter out files using the fileFilter function, skip if it returns false
           if (fileFilter) {
-            const shouldUpload = fileFilter(relativePath);
-            if (!shouldUpload) continue;
+            if (!fileFilter(relativePath)) continue;
           }
-          
-          await this.uploadFile({
-            localFilePath: fullPath,
-            remoteDirectory
-          });
-          
-          uploadedFiles.push(fullPath);
-          
-          this.logger.info(`Uploaded ${fullPath} to ${remoteDirectory}`);
-          this.sema.release();
+
+          promises.push(
+            this.sema.acquire().then(() => {
+              return this.uploadFile({
+                localFilePath: fullPath,
+                remoteDirectory
+              }).then(() => {
+                this.sema.release();
+                return fullPath; // Resolve with the uploaded file's path
+              });
+            })
+          );
         }
       }
-      
+
+      const uploadedFiles = await Promise.all(promises);
       this.logger.info(`Uploaded ${uploadedFiles.length} files from ${localDirectory} to ${remoteDirectory}`);
       return uploadedFiles;
     } catch (error) {
@@ -358,7 +381,7 @@ class BunnyCDNStorage {
       throw error;
     }
   }
-  
+
   /**
    * Download a folder from BunnyCDN storage.
    * @param {object} options The options object.
@@ -368,7 +391,13 @@ class BunnyCDNStorage {
    * @param {string[]} [options.excludedFileTypes=[]] Define file types that should not be downloaded, e.g. ['.pdf', '.jpg']
    * @param {function} options.fileFilter Can be used to exclude individual files. The function receives the remote filepath (without the storage zone) as a parameter. If the callback returns false, the file will not be downloaded.
    */
-  async downloadFolder({remoteDirectory = '/', localDirectory = '.', recursive = false, excludedFileTypes = [], fileFilter}) {
+  async downloadFolder({
+                         remoteDirectory = '/',
+                         localDirectory = '.',
+                         recursive = false,
+                         excludedFileTypes = [],
+                         fileFilter
+                       }) {
     try {
       const files = await this.listFiles({
         remoteDirectory, recursive, excludedFileTypes, fileFilter
@@ -379,30 +408,34 @@ class BunnyCDNStorage {
       this.logger.info(`Downloading ${totalFilesToDownload} files from ${remoteDirectory} to ${localDirectory}`);
 
       let downloadedCount = 0;
-      const downloadPaths = [];
+
+      const promises = [];
 
       for (const file of files) {
-        await this.sema.acquire();
-        
+
         const remotePath = this.getRemotePathFromFileWithoutStorageZone(file);
-        
+
         let downloadDestination = localDirectory;
-        
+
         if (recursive && remotePath) downloadDestination = path.join(localDirectory, remotePath);
-        
-        const downloadPath = await this.downloadFile({
-          remoteDirectory: remotePath,
-          fileName: file.ObjectName,
-          localDirectory: downloadDestination
-        });
-        downloadPaths.push(downloadPath);
-        
-        downloadedCount++;
-        this.logger.info(`Downloaded ${downloadedCount} of ${totalFilesToDownload} files`);
-        
-        this.sema.release();
+
+        promises.push(
+          this.sema.acquire().then(() => {
+            return this.downloadFile({
+              remoteDirectory: remotePath,
+              fileName: file.ObjectName,
+              localDirectory: downloadDestination
+            }).then((downloadPath) => {
+              downloadedCount++;
+              this.logger.info(`Downloaded ${downloadedCount} of ${totalFilesToDownload} files`);
+              this.sema.release();
+              return downloadPath;
+            })
+          })
+        );
       }
-      
+
+      const downloadPaths = await Promise.all(promises);
       this.logger.info(`Downloaded ${downloadedCount} files from ${remoteDirectory} to ${localDirectory}`);
       return downloadPaths;
     } catch (error) {

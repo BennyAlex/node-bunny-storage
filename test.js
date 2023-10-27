@@ -4,7 +4,7 @@ async function main() {
   const bunny = new BunnyCDNStorage({
     accessKey: process.env.TEST_API_KEY,
     storageZoneName: process.env.TEST_STORAGE_NAME,
-    concurrency: 24,
+    concurrency: 2,
     retryCount: 3,
     logLevel: 'info'
   });
