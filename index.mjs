@@ -114,8 +114,11 @@ class BunnyCDNStorage {
    * @param {object} options The options object.
    * @param {string} [options.remoteDirectory='/'] The directory path. Leave blank or use '/' to list files in the root directory.
    * @param {boolean} [options.recursive=false] Should the list go through each subdirectory recursively.
+   * @param {boolean} [options.includeFolders=false] Should folders be included in the list.
+   * @param {string[]} [options.excludedFileTypes=[]] Define file types that should not be included, e.g. ['.pdf', '.jpg']
+   * @param {function} options.fileFilter Can be used to exclude individual files. The function receives the remote filepath (without the storage zone) as a parameter. If the callback returns false, the file will not be included.
    */
-  async listFiles({remoteDirectory = '/', recursive = false}) {
+  async listFiles({remoteDirectory = '/', recursive = false, includeFolders = false, excludedFileTypes = [], fileFilter}) {
     try {
       const url = this._getFullStorageUrl(remoteDirectory);
       
@@ -129,18 +132,31 @@ class BunnyCDNStorage {
       });
       
       const files = [];
+
+      const pushFileIfAllowed = (file) => {
+        const ext = path.extname(file.ObjectName);
+        if (excludedFileTypes?.length && excludedFileTypes.includes(ext)) return;
+        if (fileFilter) {
+          const shouldInclude = fileFilter(this.getRemotePathFromFileWithoutStorageZone(file) + file.ObjectName);
+          if (!shouldInclude) return;
+        }
+        files.push(file);
+      }
       
       for (const file of response.data) {
-        if (file.IsDirectory && recursive) {
-          const subFiles = await this.listFiles({
-            remoteDirectory: this.getRemotePathFromFileWithoutStorageZone(file) + file.ObjectName,
-            recursive
-          });
-          for (const subFile of subFiles) {
-            files.push(subFile);
+        if (file.IsDirectory) {
+          if (recursive) {
+            const subFiles = await this.listFiles({
+              remoteDirectory: this.getRemotePathFromFileWithoutStorageZone(file) + file.ObjectName,
+              recursive
+            });
+            for (const subFile of subFiles) {
+              pushFileIfAllowed(subFile)
+            }
           }
+          if (includeFolders) files.push(file);
         } else {
-          files.push(file);
+          pushFileIfAllowed(file)
         }
       }
       
@@ -247,11 +263,11 @@ class BunnyCDNStorage {
    * @param {string} options.fileName - The name of the file to delete. If it is a directory, the directory and all files in the directory will be deleted. If remoteDirectory and fileName are blank, all files in the storage zone will be deleted.
    */
   async delete({remoteDirectory = '/', fileName}) {
+    if (!fileName) {
+      this.logger.error(`delete: No file name provided, remoteDirectory: ${remoteDirectory}`);
+      throw new Error(`delete: No file name provided, remoteDirectory: ${remoteDirectory}`);
+    }
     try {
-      if (!fileName) {
-        this.logger.error('delete: No file name provided');
-        throw new Error('delete: No file name provided');
-      }
       this.logger.info(`Deleting ${fileName} from ${remoteDirectory}`);
       const url = this._getFullStorageUrl(remoteDirectory, fileName);
       await axios.delete(url, {
@@ -355,26 +371,17 @@ class BunnyCDNStorage {
   async downloadFolder({remoteDirectory = '/', localDirectory = '.', recursive = false, excludedFileTypes = [], fileFilter}) {
     try {
       const files = await this.listFiles({
-        remoteDirectory, recursive
+        remoteDirectory, recursive, excludedFileTypes, fileFilter
       });
-      
-      // filter out directories and excluded file types
-      const filesToDownload = files.filter((file) => {
-          const fileExtension = path.extname(file.ObjectName);
-          if (file.IsDirectory) return false;
-          else if (excludedFileTypes?.length && excludedFileTypes.includes(fileExtension)) return false;
-          else if (fileFilter) return fileFilter(this.getRemotePathFromFileWithoutStorageZone(file) + file.ObjectName);
-          else return true;
-        });
 
-      const totalFilesToDownload = filesToDownload.length;
+      const totalFilesToDownload = files.length;
 
       this.logger.info(`Downloading ${totalFilesToDownload} files from ${remoteDirectory} to ${localDirectory}`);
 
       let downloadedCount = 0;
       const downloadPaths = [];
 
-      for (const file of filesToDownload) {
+      for (const file of files) {
         await this.sema.acquire();
         
         const remotePath = this.getRemotePathFromFileWithoutStorageZone(file);

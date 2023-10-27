@@ -47,12 +47,12 @@ async function main() {
 
   // Upload many files
   console.log('Uploading folder...');
-  // upload all files from the ./testDownload folder to the remote /testRemoteFolderUpload folder, except .html files
+  // upload all files from the ./testDownload folder to the remote /testRemoteFolderUpload folder, except .md files
   await bunny.uploadFolder({
     localDirectory: './testDownload',
     remoteDirectory: 'testRemoteFolderUpload',
     recursive: true,
-    excludedFileTypes: ['.html'],
+    excludedFileTypes: ['.md'],
     fileFilter: (filepath) => {
       // filter out first file from being uploaded
       return !filepath.includes(fileName)
@@ -61,12 +61,12 @@ async function main() {
 
   // Download many files
   console.log('Downloading complete root folder recursively, excluding testRemoteFolderUpload folder...');
-  // download all files from the remote folder including subdirectories to the ./testDownload/downloadFolderTest folder, except .png and .jpg files
+  // download all files from the remote folder including subdirectories to the ./testDownload/downloadFolderTest folder, except .md files
   const downloadedFilesPaths = await bunny.downloadFolder({
     remoteDirectory: '/',
     localDirectory: './testDownload/downloadFolderTest',
     recursive: true,
-    excludedFileTypes: ['.png', '.jpg'],
+    excludedFileTypes: ['.md'],
     fileFilter: (filepath) => {
       // filter out the uploaded file from being downloaded
       return !filepath.includes('testRemoteFolderUpload')

@@ -34,7 +34,14 @@ const bunny = new BunnyCDNStorage({
 To list files from a remote directory:
 ```javascript
 // list all files from root folder recursively
-await bunny.listFiles({remoteDirectory: '/', recursive: true});
+await bunny.listFiles({
+  remoteDirectory: '/',
+  recursive: true,
+  excludedFileTypes: ['.md'], // exclude .md files
+  fileFilter: (filepath) => {
+    // filter out the first file from being listed
+    return !filepath.includes(fileName)
+  }});
 ```
 
 ### Download File
